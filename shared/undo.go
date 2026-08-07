@@ -233,3 +233,53 @@ func FormatBytes(b int64) string {
 		return fmt.Sprintf("%d B", b)
 	}
 }
+
+// ClearAllBackups removes all backup sessions for a given tool
+func ClearAllBackups(tool string) (int, error) {
+	base, err := undoBaseDir(tool)
+	if err != nil {
+		return 0, err
+	}
+
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	removed := 0
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != "latest.json" {
+			if err := os.RemoveAll(filepath.Join(base, entry.Name())); err == nil {
+				removed++
+			}
+		}
+	}
+
+	// Also remove the latest.json manifest
+	manifestPath := filepath.Join(base, "latest.json")
+	if _, err := os.Stat(manifestPath); err == nil {
+		os.Remove(manifestPath)
+	}
+
+	return removed, nil
+}
+
+// GetBackupSize returns the total size of all backups for a tool
+func GetBackupSize(tool string) (int64, int, error) {
+	sessions, err := ListUndoSessions(tool)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var totalSize int64
+	totalFiles := 0
+	for _, session := range sessions {
+		totalSize += session.SizeBytes
+		totalFiles += session.FileCount
+	}
+
+	return totalSize, totalFiles, nil
+}

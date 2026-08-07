@@ -67,8 +67,31 @@ Each provider supports:
 
 | Flag | Description |
 | --- | --- |
-| `--dry-run` | Preview changes without writing tags |
+| `--write` | Actually update MP3 tags (default: dry-run) |
 | `--undo` | Restore the most recent tag write session |
+
+### Global Settings
+
+Settings are stored in `~/.config/genres/global-settings.json` and shared across all providers. Configure them from any provider's `Settings` menu.
+
+| Setting | Description |
+| --- | --- |
+| **Auto Backup** | Enable/disable automatic file backups before writing tags |
+| **Prompt Before Write** | Ask for confirmation before saving a backup |
+| **Clear All Backups** | Remove all stored backup files |
+| **Downloads Path** | Configurable path for the Downloads quick-action (default: `/Volumes/Eksternal/Music/Downloads`) |
+| **Swinsian Integration** | Toggle macOS Swinsian player integration |
+
+### 🍎 Swinsian Integration
+
+When enabled in Settings, two extra input options appear:
+
+- **Playing** — Tags the entire album folder of the currently playing track in Swinsian
+- **Selected** — Tags each selected track's album folder
+
+### Undo & Backups
+
+Every tag write creates a timestamped backup in `~/.config/genres/undo/`. Use `u` from the main menu to restore the latest session or manage old backups. Backups can be disabled or set to prompt before creation in Settings.
 
 ## <img src="https://api.iconify.design/mdi:server.svg?color=%2301acd7" height="22"> Providers
 
@@ -93,6 +116,8 @@ All providers normalize genre tags to a consistent set and write them to MP3 fil
 ├── shared/                       # Shared libraries
 │   ├── normalize.go              #   Genre normalization logic
 │   ├── undo.go                   #   Tag restore / undo support
+│   ├── settings.go               #   Global settings (backup, paths, Swinsian)
+│   ├── swinsian.go               #   Swinsian AppleScript integration
 │   └── undo_test.go
 ├── discogs/                      # Discogs provider
 │   ├── main.go

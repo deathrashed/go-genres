@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const appWidth = 62
+const appWidth = 65 // full outer box width (│…│)
 
 var (
 	borderStyle      lipgloss.Style
@@ -83,14 +83,14 @@ func padRight(s string, width int) string {
 }
 
 func renderHeader() string {
-	title := titleStyle.Render("G E N R E") + "  " + titleIconStyle.Render("") + "  " + titleStyle.Render("T O O L K I T")
-	desc := descAccentStyle.Render("         Fetch, normalize, and write MP3 genre tags           ")
+	title := titleStyle.Render("G E N R E") + "   " + titleIconStyle.Render("") + "   " + titleStyle.Render("T O O L S")
+	desc := descAccentStyle.Render("                   FETCH • NORMALIZE • WRITE                   ")
 	return strings.Join([]string{
-		borderStyle.Render("               ╭────────────────────────────────╮"),
-		borderStyle.Render("╭──────────────┤") + "   " + title + "  " + borderStyle.Render("├──────────────╮"),
-		borderStyle.Render("│              ╰────────────────────────────────╯              │"),
+		borderStyle.Render("                  ╭───────────────────────────╮"),
+		borderStyle.Render("╭─────────────────┤ ") + title + borderStyle.Render(" ├─────────────────╮"),
+		borderStyle.Render("│                 ╰───────────────────────────╯                 │"),
 		borderStyle.Render("│") + desc + borderStyle.Render("│"),
-		borderStyle.Render("├──────────────────────────────────────────────────────────────┤"),
+		borderStyle.Render("│  • ─────────────────────────────────────────────────────── •  │"),
 	}, "\n") + "\n"
 }
 
@@ -100,23 +100,36 @@ func optionText(icon, key, rest string) string {
 
 func renderMenu() {
 	fmt.Print(renderHeader())
+
+	// Leading-icon providers
 	lastfm := optionText("", "L", "ast.fm")
 	metallum := optionText("", "M", "etallum")
-	spotify := optionText("", "S", "potify")
-	discogs := optionText("󰋙", "D", "iscogs")
-	undo := optionText("󰕌", "U", "ndo")
-	quit := optionText("", "Q", "uit")
-	fmt.Println(borderStyle.Render("│                                                              │"))
-	fmt.Println(borderStyle.Render("│") + "               " + lastfm + sepStyle.Render("     •      ") + metallum + "              " + borderStyle.Render("│"))
-	fmt.Println(borderStyle.Render("│") + "               " + spotify + sepStyle.Render("     •      ") + discogs + "             " + borderStyle.Render("│"))
-	fmt.Println(borderStyle.Render("│  ") + sepStyle.Render("──────────────────────────────────────────────────────────") + borderStyle.Render("  │"))
-	fmt.Println(borderStyle.Render("│") + "                 " + undo + sepStyle.Render("      •      ") + quit + "                  " + borderStyle.Render("│"))
-	fmt.Println(borderStyle.Render("│                                                              │"))
-	fmt.Println(borderStyle.Render("╰───────────────────────────╮       ╭──────────────────────────╯"))
+
+	// Trailing-icon providers (matches the target layout)
+	spotify := keyStyle.Render("S") + actionLabelStyle.Render("potify ") + rowIconStyle.Render("")
+	discogs := keyStyle.Render("D") + actionLabelStyle.Render("iscogs ") + rowIconStyle.Render("󰻃")
+
+	sourceInner := lastfm + sepStyle.Render("  • ") + metallum + sepStyle.Render("  •  ") +
+		spotify + sepStyle.Render("  •  ") + discogs
+	sourceRow := padRight("    "+sourceInner, appWidth-2)
+	fmt.Println(borderStyle.Render("│") + sourceRow + borderStyle.Render("│"))
+	fmt.Println(borderStyle.Render("│  • ─────────────────────────────────────────────────────── •  │"))
+
+	// Actions – icon before Undo, icon after Quit
+	undo := rowIconStyle.Render("") + "  " + keyStyle.Render("U") + actionLabelStyle.Render("ndo")
+	quit := keyStyle.Render("Q") + actionLabelStyle.Render("uit ") + rowIconStyle.Render("")
+	actionInner := undo + sepStyle.Render("    •    ") + quit
+	actionRow := padRight(centerText(actionInner, appWidth-2), appWidth-2)
+	fmt.Println(borderStyle.Render("│") + actionRow + borderStyle.Render("│"))
+	fmt.Println(borderStyle.Render("╰───────────────────────────────────────────────────────────────╯"))
+
+	// Open the prompt box (closed later by closePromptBox)
+	fmt.Println(strings.Repeat(" ", 28) + borderStyle.Render("╭───────╮"))
 }
 
 func renderPrompt() {
-	fmt.Print(strings.Repeat(" ", 32))
+	// Cursor sits on the blank line inside the prompt box
+	fmt.Print(strings.Repeat(" ", 28))
 }
 
 func closePromptBox() {
@@ -152,22 +165,22 @@ func firstExisting(paths ...string) string {
 
 func lastfmBinary() string {
 	root := moduleRoot()
-	return filepath.Join(root, "lastfm", "bin", "lastfm-genres")
+	return filepath.Join(root, "lastfm", "bin", "genres-lastfm")
 }
 
 func metallumBinary() string {
 	root := moduleRoot()
-	return filepath.Join(root, "metallum", "bin", "metallum-genres")
+	return filepath.Join(root, "metallum", "bin", "genres-metallum")
 }
 
 func spotifyBinary() string {
 	root := moduleRoot()
-	return filepath.Join(root, "spotify", "bin", "spotify-genres")
+	return filepath.Join(root, "spotify", "bin", "genres-spotify")
 }
 
 func discogsBinary() string {
 	root := moduleRoot()
-	return filepath.Join(root, "discogs", "bin", "discogs-genres")
+	return filepath.Join(root, "discogs", "bin", "genres-discogs")
 }
 
 func runTool(name, path string, args ...string) {

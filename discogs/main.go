@@ -16,7 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"go-genres/shared"
+	genrenorm "go-genres/shared"
+
 	"github.com/bogem/id3v2/v2"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -297,6 +298,8 @@ func renderStatusLine(s savedSettings) string {
 }
 
 func renderMainMenu(s savedSettings) {
+	globalSettings, _ := genrenorm.LoadGlobalSettings()
+
 	fmt.Print(renderMainHeader())
 	fmt.Println()
 	fmt.Println(renderStatusLine(s))
@@ -304,15 +307,18 @@ func renderMainMenu(s savedSettings) {
 	fmt.Print(renderSection("", "Input"))
 	fmt.Println(renderMenuItem("1", "\uf506", "Path", "Enter file/folder paths"))
 	fmt.Println(renderMenuItem("2", "\U000f1266", "Clipboard", "Use path from clipboard"))
+	if globalSettings.EnableSwinsian {
+		fmt.Println(renderMenuItem("p", "▶", "Playing", "Tag currently playing in Swinsian"))
+		fmt.Println(renderMenuItem("e", "", "Selected", "Tag selected tracks in Swinsian"))
+	}
 	fmt.Println()
 	fmt.Print(renderSection("", "Search"))
 	fmt.Println(renderMenuItem("3", "\U000f0036", "Finder", "Select folder with Finder"))
 	fmt.Println(renderMenuItem("4", "", "FZF", "Search from audio library"))
 	fmt.Println()
-	fmt.Print(renderSection("", "Actions"))
+	fmt.Print(renderSection("", "Actions"))
 	fmt.Println(renderMenuItem("5", "\uf0e2", "Run Last", "Re-run previous target"))
-	fmt.Println(renderMenuItem("6", "\uf001", "Deemix", "Run on download folder"))
-	fmt.Println(renderMenuItem("7", "\uf001", "Soulseek", "Run on Soulseek folder"))
+	fmt.Println(renderMenuItem("6", "\uf001", "Downloads", "Run on downloads folder"))
 	fmt.Println(renderMenuItem("u", "󰕌", "Undo Last", "Restore files from last write"))
 	fmt.Println()
 	fmt.Print(renderSection("", "System"))
@@ -322,6 +328,8 @@ func renderMainMenu(s savedSettings) {
 }
 
 func renderSettingsMenu(s savedSettings) {
+	globalSettings, _ := genrenorm.LoadGlobalSettings()
+
 	var modeStr string
 	var modeStyler lipgloss.Style
 	if s.Write {
@@ -339,16 +347,33 @@ func renderSettingsMenu(s savedSettings) {
 	fmt.Println(renderSettingItem("g", "Max Genres", fmt.Sprintf("%d", s.MaxGenres)))
 	fmt.Println(renderSettingItem("d", "Delay", fmt.Sprintf("%d ms", s.DelayMs)))
 	fmt.Println()
-	fmt.Print(renderSection("", "Actions"))
+	fmt.Print(renderSection("", "Backup"))
+	backupStatus := "disabled"
+	if globalSettings.EnableBackup {
+		backupStatus = "enabled"
+	}
+	fmt.Println(renderSettingItem("a", "Auto Backup", backupStatus))
+	promptStatus := "off"
+	if globalSettings.PromptForBackup {
+		promptStatus = "on"
+	}
+	fmt.Println(renderSettingItem("p", "Prompt Before Write", promptStatus))
+	fmt.Println(renderSettingItem("c", "Clear All Backups", "Remove all backup files"))
+	fmt.Println()
+	fmt.Print(renderSection("", "Swinsian"))
+	swinsianStatus := "disabled"
+	if globalSettings.EnableSwinsian {
+		swinsianStatus = "enabled"
+	}
+	fmt.Println(renderSettingItem("n", "Swinsian Integration", swinsianStatus))
+	fmt.Println()
+	fmt.Print(renderSection("", "Actions"))
 	fmt.Println(renderMenuItem("s", "\uf00c", "Save", "Write settings and return"))
 	fmt.Println(renderMenuItem("x", "\uf00d", "Back", "Return without saving"))
 	fmt.Println()
 }
 
 // ─── Constants & Settings ─────────────────────────────────────
-
-const deemixQuickPath = "/Volumes/Eksternal/Music/Downloads/Deemix"
-const soulseekQuickPath = "/Volumes/Eksternal/Music/Downloads/Soulseek"
 
 type savedSettings struct {
 	Write     bool `json:"write"`
@@ -478,6 +503,7 @@ func openFinderDialog() string {
 		set theDir to choose folder with prompt "Select folder with MP3 files"
 		return POSIX path of theDir
 	end tell`
+
 	cmd := exec.Command("osascript", "-e", script)
 	out, err := cmd.Output()
 	if err != nil {
@@ -568,6 +594,38 @@ func runSettingsMenu() savedSettings {
 				}
 			}
 			s.DelayMs = delays[(idx+1)%len(delays)]
+		case "a":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			globalSettings.EnableBackup = !globalSettings.EnableBackup
+			genrenorm.SaveGlobalSettings(globalSettings)
+		case "p":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			globalSettings.PromptForBackup = !globalSettings.PromptForBackup
+			genrenorm.SaveGlobalSettings(globalSettings)
+		case "c":
+			clearScreen()
+			fmt.Println(renderPageHeader("C L E A R", "", "B A C K U P S", "Remove all backup files for Discogs"))
+			fmt.Println()
+			fmt.Print(renderSection("", "Warning"))
+			fmt.Println("   " + dWarnStyle.Render("This will permanently delete all backup files."))
+			fmt.Println("   " + dMutedStyle.Render("This action cannot be undone."))
+			fmt.Println()
+			fmt.Print(dPromptStyle.Render(" Are you sure? [y/N]:"))
+			fmt.Print(" ")
+			answer := strings.ToLower(readLine())
+			if answer == "y" || answer == "yes" {
+				removed, err := genrenorm.ClearAllBackups("discogs")
+				if err != nil {
+					fmt.Println("   " + dErrorStyle.Render("✖ Error clearing backups: "+err.Error()))
+				} else {
+					fmt.Println("   " + dSuccessStyle.Render(fmt.Sprintf("◆ Cleared %d backup session(s)", removed)))
+				}
+				promptReturn()
+			}
+		case "n":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			globalSettings.EnableSwinsian = !globalSettings.EnableSwinsian
+			genrenorm.SaveGlobalSettings(globalSettings)
 		case "s":
 			saveSettings(s)
 			cfg.write = s.Write
@@ -614,12 +672,12 @@ func getDiscogsToken() string {
 
 type discogsSearchResult struct {
 	Results []struct {
-		ID      int    `json:"id"`
-		Title   string `json:"title"`
-		Type    string `json:"type"`
-		Year    string `json:"year"`
-		Style   []string `json:"style"`
-		Genre   []string `json:"genre"`
+		ID    int      `json:"id"`
+		Title string   `json:"title"`
+		Type  string   `json:"type"`
+		Year  string   `json:"year"`
+		Style []string `json:"style"`
+		Genre []string `json:"genre"`
 	} `json:"results"`
 }
 
@@ -861,72 +919,72 @@ func normalizeDiscogsStyles(styles []string, maxGenres int) []string {
 
 	// Map abbreviations to full genre names (Discogs uses concise labels)
 	expansions := map[string]string{
-		"thrash":               "Thrash Metal",
-		"death":                "Death Metal",
-		"black":                "Black Metal",
-		"doom":                 "Doom Metal",
-		"heavy":                "Heavy Metal",
-		"speed":                "Speed Metal",
-		"power":                "Power Metal",
-		"progressive":          "Progressive Metal",
-		"symphonic":            "Symphonic Metal",
-		"folk":                 "Folk Metal",
-		"gothic":               "Gothic Metal",
-		"groove":               "Groove Metal",
-		"industrial":           "Industrial Metal",
-		"nu":                   "Nu Metal",
-		"stoner":               "Stoner Metal",
-		"sludge":               "Sludge Metal",
-		"hardcore":             "Hardcore",
-		"punk":                 "Punk",
-		"hardcore punk":        "Hardcore Punk",
-		"experimental":         "Experimental",
-		"avantgarde":           "Avantgarde",
-		"atmospheric":          "Atmospheric",
-		"melodic":              "Melodic",
-		"technical":            "Technical",
-		"neoclassical":         "Neoclassical",
-		"post-metal":           "Post-Metal",
-		"post-hardcore":        "Post-Hardcore",
-		"mathcore":             "Mathcore",
-		"metalcore":            "Metalcore",
-		"deathcore":            "Deathcore",
-		"djent":                "Djent",
-		"ambient":              "Ambient",
-		"drone":                "Drone",
-		"noise":                "Noise",
-		"avant-garde":          "Avantgarde",
-		"post-rock":            "Post-Rock",
-		"sludge metal":         "Sludge Metal",
-		"stoner rock":          "Stoner Rock",
-		"stoner metal":         "Stoner Metal",
-		"atmospheric black":    "Atmospheric Black Metal",
-		"depressive black":     "Depressive Black Metal",
-		"melodic death":        "Melodic Death Metal",
-		"technical death":      "Technical Death Metal",
-		"brutal death":         "Brutal Death Metal",
-		"slam":                 "Slam Death Metal",
-		"grindcore":            "Grindcore",
-		"deathgrind":           "Deathgrind",
-		"goregrind":            "Goregrind",
-		"pornogrind":           "Pornogrind",
-		"crust":                "Crust Punk",
-		"d-beat":               "D-Beat",
-		"anarcho":              "Anarcho Punk",
-		"oi":                   "Oi!",
-		"street punk":          "Street Punk",
-		"skate punk":           "Skate Punk",
-		"melodic hardcore":     "Melodic Hardcore",
-		"metal":                "Heavy Metal",
-		"rock":                 "Rock",
-		"hard rock":            "Hard Rock",
-		"alternative":          "Alternative",
-		"alternative rock":     "Alternative Rock",
-		"indie":                "Indie",
-		"indie rock":           "Indie Rock",
-		"downtempo":            "Downtempo",
-		"electronic":           "Electronic",
-		"industrial metal":     "Industrial Metal",
+		"thrash":            "Thrash Metal",
+		"death":             "Death Metal",
+		"black":             "Black Metal",
+		"doom":              "Doom Metal",
+		"heavy":             "Heavy Metal",
+		"speed":             "Speed Metal",
+		"power":             "Power Metal",
+		"progressive":       "Progressive Metal",
+		"symphonic":         "Symphonic Metal",
+		"folk":              "Folk Metal",
+		"gothic":            "Gothic Metal",
+		"groove":            "Groove Metal",
+		"industrial":        "Industrial Metal",
+		"nu":                "Nu Metal",
+		"stoner":            "Stoner Metal",
+		"sludge":            "Sludge Metal",
+		"hardcore":          "Hardcore",
+		"punk":              "Punk",
+		"hardcore punk":     "Hardcore Punk",
+		"experimental":      "Experimental",
+		"avantgarde":        "Avantgarde",
+		"atmospheric":       "Atmospheric",
+		"melodic":           "Melodic",
+		"technical":         "Technical",
+		"neoclassical":      "Neoclassical",
+		"post-metal":        "Post-Metal",
+		"post-hardcore":     "Post-Hardcore",
+		"mathcore":          "Mathcore",
+		"metalcore":         "Metalcore",
+		"deathcore":         "Deathcore",
+		"djent":             "Djent",
+		"ambient":           "Ambient",
+		"drone":             "Drone",
+		"noise":             "Noise",
+		"avant-garde":       "Avantgarde",
+		"post-rock":         "Post-Rock",
+		"sludge metal":      "Sludge Metal",
+		"stoner rock":       "Stoner Rock",
+		"stoner metal":      "Stoner Metal",
+		"atmospheric black": "Atmospheric Black Metal",
+		"depressive black":  "Depressive Black Metal",
+		"melodic death":     "Melodic Death Metal",
+		"technical death":   "Technical Death Metal",
+		"brutal death":      "Brutal Death Metal",
+		"slam":              "Slam Death Metal",
+		"grindcore":         "Grindcore",
+		"deathgrind":        "Deathgrind",
+		"goregrind":         "Goregrind",
+		"pornogrind":        "Pornogrind",
+		"crust":             "Crust Punk",
+		"d-beat":            "D-Beat",
+		"anarcho":           "Anarcho Punk",
+		"oi":                "Oi!",
+		"street punk":       "Street Punk",
+		"skate punk":        "Skate Punk",
+		"melodic hardcore":  "Melodic Hardcore",
+		"metal":             "Heavy Metal",
+		"rock":              "Rock",
+		"hard rock":         "Hard Rock",
+		"alternative":       "Alternative",
+		"alternative rock":  "Alternative Rock",
+		"indie":             "Indie",
+		"indie rock":        "Indie Rock",
+		"downtempo":         "Downtempo",
+		"electronic":        "Electronic",
+		"industrial metal":  "Industrial Metal",
 	}
 
 	normalized := make([]string, 0, len(all))
@@ -1441,6 +1499,50 @@ func interactiveLoop() {
 				processPathInteractive(path, s)
 			}
 
+		case "p", "P":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			if !globalSettings.EnableSwinsian {
+				fmt.Println()
+				fmt.Println("  " + dWarnStyle.Render("Swinsian integration is disabled") + "  " + dMutedStyle.Render("Enable it in Settings."))
+				promptReturn()
+				continue
+			}
+			path, err := genrenorm.CurrentAlbumDir()
+			if err != nil {
+				fmt.Println()
+				fmt.Println("  " + dErrorStyle.Render("✖ "+err.Error()))
+				promptReturn()
+				continue
+			}
+			lastTarget = path
+			processPathInteractive(path, s)
+
+		case "e", "E":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			if !globalSettings.EnableSwinsian {
+				fmt.Println()
+				fmt.Println("  " + dWarnStyle.Render("Swinsian integration is disabled") + "  " + dMutedStyle.Render("Enable it in Settings."))
+				promptReturn()
+				continue
+			}
+			paths, err := genrenorm.SelectedTrackPaths()
+			if err != nil {
+				fmt.Println()
+				fmt.Println("  " + dErrorStyle.Render("✖ "+err.Error()))
+				promptReturn()
+				continue
+			}
+			// Process each selected track's album folder
+			seen := make(map[string]bool)
+			for _, p := range paths {
+				dir := filepath.Dir(p)
+				if !seen[dir] {
+					seen[dir] = true
+					lastTarget = dir
+					processPathInteractive(dir, s)
+				}
+			}
+
 		case "3":
 			clearScreen()
 			fmt.Println(renderPageHeader("", "󰀶", "F I N D E R", "Select a folder with the macOS folder picker"))
@@ -1474,19 +1576,20 @@ func interactiveLoop() {
 		case "5":
 			if lastTarget == "" {
 				fmt.Println()
-				fmt.Println("  " + dInfoStyle.Render("No previous target") + "  " + dMutedStyle.Render("Run Path, Clipboard, Finder, fzf, or Deemix first."))
+				fmt.Println("  " + dInfoStyle.Render("No previous target") + "  " + dMutedStyle.Render("Run Path, Clipboard, Finder, fzf, or Downloads first."))
 				promptReturn()
 				continue
 			}
 			processPathInteractive(lastTarget, s)
 
 		case "6":
-			lastTarget = deemixQuickPath
-			processPathInteractive(lastTarget, s)
-
-		case "7":
-			lastTarget = soulseekQuickPath
-			processPathInteractive(lastTarget, s)
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			downloadsPath := globalSettings.DownloadsPath
+			if downloadsPath == "" {
+				downloadsPath = "/Volumes/Eksternal/Music/Downloads"
+			}
+			lastTarget = downloadsPath
+			processPathInteractive(downloadsPath, s)
 
 		case "u", "U":
 			undoMenu()

@@ -20,7 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"go-genres/shared"
+	genrenorm "go-genres/shared"
+
 	"github.com/bogem/id3v2/v2"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -48,17 +49,10 @@ var defaultSettings = settings{
 	BaseDir:   "/Volumes/Eksternal/Audio",
 }
 
-const deemixQuickPath = "/Volumes/Eksternal/Music/Downloads/Deemix"
-const soulseekQuickPath = "/Volumes/Eksternal/Music/Downloads/Soulseek"
-
 var ErrCancelled = errors.New("cancelled")
 
+
 var lastfmAPIKey string
-
-// ─── Color Palette (Charm theme) ────────────────────────────────
-// Matches charmbracelet/huh ThemeCharm: indigo titles, fuchsia accents,
-// green success, red errors. Adapts to light/dark terminal backgrounds.
-
 var (
 	borderColor    lipgloss.Color
 	sepColor       lipgloss.Color
@@ -394,6 +388,8 @@ func padLeft(s string, width int) string {
 // ─── Main Menu ─────────────────────────────────────────────────
 
 func renderMainMenu(s settings) {
+	globalSettings, _ := genrenorm.LoadGlobalSettings()
+
 	fmt.Print(renderMainHeader())
 	fmt.Println()
 	fmt.Println(renderStatus(s))
@@ -401,6 +397,10 @@ func renderMainMenu(s settings) {
 	fmt.Print(renderSection("", "Input"))
 	fmt.Println(renderMenuItem("1", "\uf506", "Path", "Enter file/folder paths"))
 	fmt.Println(renderMenuItem("2", "\U000f1266", "Clipboard", "Use path from clipboard"))
+	if globalSettings.EnableSwinsian {
+		fmt.Println(renderMenuItem("p", "▶", "Playing", "Tag currently playing in Swinsian"))
+		fmt.Println(renderMenuItem("e", "󰎈", "Selected", "Tag selected tracks in Swinsian"))
+	}
 	fmt.Println()
 	fmt.Print(renderSection("", "Search"))
 	fmt.Println(renderMenuItem("3", "\U000f0036", "Finder", "Select folder with Finder"))
@@ -408,8 +408,7 @@ func renderMainMenu(s settings) {
 	fmt.Println()
 	fmt.Print(renderSection("", "Actions"))
 	fmt.Println(renderMenuItem("5", "\uf0e2", "Run Last", "Re-run previous target"))
-	fmt.Println(renderMenuItem("6", "\uf001", "Deemix", "Run on download folder"))
-	fmt.Println(renderMenuItem("7", "\uf001", "Soulseek", "Run on Soulseek folder"))
+	fmt.Println(renderMenuItem("6", "\uf001", "Downloads", "Run on downloads folder"))
 	fmt.Println(renderMenuItem("u", "󰕌", "Undo Last", "Restore files from last write"))
 	fmt.Println()
 	fmt.Print(renderSection("", "System"))
@@ -421,6 +420,8 @@ func renderMainMenu(s settings) {
 // ─── Settings Menu ──────────────────────────────────────────────
 
 func renderSettingsMenu(s settings) {
+	globalSettings, _ := genrenorm.LoadGlobalSettings()
+
 	var modeStr string
 	var modeStyler lipgloss.Style
 	if s.DryRun {
@@ -437,6 +438,26 @@ func renderSettingsMenu(s settings) {
 	fmt.Println(renderSettingItem("g", "󰲹", "Max Genres", fmt.Sprintf("%d", s.MaxGenres), labelStyle))
 	fmt.Println(renderSettingItem("m", "󱃯", "Default Mode", modeStr, modeStyler))
 	fmt.Println(renderSettingItem("b", "󰡦", "Base Dir", s.BaseDir, pathStyle))
+	fmt.Println()
+	fmt.Print(renderSection("󰗼", "Backup"))
+	backupStatus := "disabled"
+	if globalSettings.EnableBackup {
+		backupStatus = "enabled"
+	}
+	fmt.Println(renderSettingItem("a", "󰄬", "Auto Backup", backupStatus, labelStyle))
+	promptStatus := "off"
+	if globalSettings.PromptForBackup {
+		promptStatus = "on"
+	}
+	fmt.Println(renderSettingItem("p", "󰋧", "Prompt Before Write", promptStatus, labelStyle))
+	fmt.Println(renderSettingItem("c", "󰆴", "Clear All Backups", "Remove all backup files", warnStyle))
+	fmt.Println()
+	fmt.Print(renderSection("", "Swinsian"))
+	swinsianStatus := "disabled"
+	if globalSettings.EnableSwinsian {
+		swinsianStatus = "enabled"
+	}
+	fmt.Println(renderSettingItem("n", "▶", "Swinsian Integration", swinsianStatus, labelStyle))
 	fmt.Println()
 	fmt.Print(renderSection("", "Actions"))
 	fmt.Println(renderMenuItem("s", "", "Save", "Write settings and return"))
@@ -465,6 +486,38 @@ func runSettingsMenu() settings {
 			if newDir != "" {
 				s.BaseDir = newDir
 			}
+		case "a":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			globalSettings.EnableBackup = !globalSettings.EnableBackup
+			genrenorm.SaveGlobalSettings(globalSettings)
+		case "p":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			globalSettings.PromptForBackup = !globalSettings.PromptForBackup
+			genrenorm.SaveGlobalSettings(globalSettings)
+		case "c":
+			clearScreen()
+			fmt.Println(renderPageHeader("C L E A R", "󰴀", "B A C K U P S", "Remove all backup files for Last.fm"))
+			fmt.Println()
+			fmt.Print(renderSection("⚠", "Warning"))
+			fmt.Println("   " + warnStyle.Render("This will permanently delete all backup files."))
+			fmt.Println("   " + mutedStyle.Render("This action cannot be undone."))
+			fmt.Println()
+			fmt.Print(promptStyle.Render(" Are you sure? [y/N]:"))
+			fmt.Print(" ")
+			answer := strings.ToLower(readLine())
+			if answer == "y" || answer == "yes" {
+				removed, err := genrenorm.ClearAllBackups("lastfm")
+				if err != nil {
+					fmt.Println("   " + errorStyle.Render("✖ Error clearing backups: "+err.Error()))
+				} else {
+					fmt.Println("   " + successStyle.Render(fmt.Sprintf("◆ Cleared %d backup session(s)", removed)))
+				}
+				promptReturn()
+			}
+		case "n":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			globalSettings.EnableSwinsian = !globalSettings.EnableSwinsian
+			genrenorm.SaveGlobalSettings(globalSettings)
 		case "s":
 			cfg.write = !s.DryRun
 			cfg.maxGenres = s.MaxGenres
@@ -480,7 +533,7 @@ func readBaseDirInput(current string) string {
 	clearScreen()
 	fmt.Println(renderPageHeader("B A S E", "󱍚", "D I R E C T O R Y", "Change the default library search root"))
 	fmt.Println()
-	fmt.Println(renderInfoLine("󱂶", "Current", current, pathStyle))
+	fmt.Println(renderInfoLine("󱍚", "Current", current, pathStyle))
 	fmt.Println("  " + sepStyle.Render("────────────────────────────────────────────────────────────"))
 	fmt.Println()
 	fmt.Println("                                    " + renderKeyboardHint("b back • q quit • enter confirm"))
@@ -854,6 +907,43 @@ func interactiveLoop() {
 				processPathInteractive(path, s)
 			}
 
+		case "p", "P":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			if !globalSettings.EnableSwinsian {
+				fmt.Println()
+				fmt.Println("  " + warnStyle.Render("Swinsian integration is disabled") + "  " + mutedStyle.Render("Enable it in Settings."))
+				promptReturn()
+				continue
+			}
+			path, err := genrenorm.CurrentAlbumDir()
+			if err != nil {
+				fmt.Println()
+				fmt.Println("  " + errorStyle.Render("✖ "+err.Error()))
+				promptReturn()
+				continue
+			}
+			lastTarget = path
+			processPathInteractive(path, s)
+
+		case "e", "E":
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			if !globalSettings.EnableSwinsian {
+				fmt.Println()
+				fmt.Println("  " + warnStyle.Render("Swinsian integration is disabled") + "  " + mutedStyle.Render("Enable it in Settings."))
+				promptReturn()
+				continue
+			}
+			paths, err := genrenorm.SelectedTrackPaths()
+			if err != nil {
+				fmt.Println()
+				fmt.Println("  " + errorStyle.Render("✖ "+err.Error()))
+				promptReturn()
+				continue
+			}
+			// Use first track as target for processing
+			lastTarget = paths[0]
+			processPathsInteractive(paths, s)
+
 		case "3":
 			renderFinderScreen()
 			path := openFinderDialog()
@@ -888,19 +978,21 @@ func interactiveLoop() {
 		case "5":
 			if lastTarget == "" {
 				fmt.Println()
-				fmt.Println("  " + infoStyle.Render("No previous target") + "  " + mutedStyle.Render("Run Path, Clipboard, Finder, fzf, or Deemix first."))
+				fmt.Println("  " + infoStyle.Render("No previous target") + "  " + mutedStyle.Render("Run Path, Clipboard, Finder, fzf, or Downloads first."))
 				promptReturn()
 				continue
 			}
 			processPathInteractive(lastTarget, s)
 
 		case "6":
-			lastTarget = deemixQuickPath
-			processPathInteractive(lastTarget, s)
+			globalSettings, _ := genrenorm.LoadGlobalSettings()
+			downloadsPath := globalSettings.DownloadsPath
+			if downloadsPath == "" {
+				downloadsPath = "/Volumes/Eksternal/Music/Downloads"
+			}
+			lastTarget = downloadsPath
+			processPathInteractive(downloadsPath, s)
 
-		case "7":
-			lastTarget = soulseekQuickPath
-			processPathInteractive(lastTarget, s)
 
 		case "u", "U":
 			undoMenu()
@@ -912,6 +1004,82 @@ func interactiveLoop() {
 			return
 		}
 	}
+}
+
+// processPathsInteractive processes multiple paths interactively
+func processPathsInteractive(paths []string, s settings) bool {
+	clearScreen()
+	resetHTTPClient()
+	previousWrite := cfg.write
+	cfg.write = !s.DryRun
+	cfg.maxGenres = s.MaxGenres
+	defer func() { cfg.write = previousWrite }()
+
+	if !loadAPIKey() {
+		renderErrorScreen("A P I", "", "K E Y", "LASTFM_API_KEY is required before processing", "LASTFM_API_KEY not found", "Set LASTFM_API_KEY in your environment or ~/.env.")
+		promptReturn()
+		return false
+	}
+
+	var allFiles []string
+	for _, path := range paths {
+		err := validateTarget(path)
+		if err != nil {
+			renderErrorScreen("P A T H", "", "W A R N I N G", "Validate the selected file or folder", "Invalid target", err.Error())
+			promptReturn()
+			return false
+		}
+
+		files, err := collectFiles([]string{path})
+		if err != nil {
+			renderErrorScreen("P A T H", "", "W A R N I N G", "Collect MP3 files from the selected target", "Collect failed", err.Error())
+			promptReturn()
+			return false
+		}
+		allFiles = append(allFiles, files...)
+	}
+
+	if len(allFiles) == 0 {
+		renderErrorScreen("N O", "󰽳", "M P 3", "No matching audio files were found", "No MP3 files found", strings.Join(paths, ", "))
+		promptReturn()
+		return false
+	}
+
+	_, procErr := runProcessingCLI(allFiles)
+
+	if !cfg.write {
+		fmt.Println()
+		fmt.Print(promptStyle.Render("❯ Write these changes now? [y/N]:"))
+		fmt.Print(" ")
+		answer := strings.ToLower(readLine())
+		if answer == "y" || answer == "yes" {
+			clearScreen()
+			cfg.write = true
+			_, procErr = runProcessingCLI(allFiles)
+		}
+	}
+
+	if procErr != nil {
+		fmt.Println()
+		fmt.Println("   " + errorStyle.Render("✖ "+procErr.Error()))
+	}
+
+	if cfg.write {
+		fmt.Println()
+		fmt.Print(promptStyle.Render(" Open in Mp3tag? [y/N]:"))
+		fmt.Print(" ")
+		answer := strings.ToLower(readLine())
+		if answer == "y" || answer == "yes" {
+			tagPath := paths[0]
+			if info, err := os.Stat(paths[0]); err == nil && !info.IsDir() {
+				tagPath = filepath.Dir(paths[0])
+			}
+			exec.Command("open", "-a", "Mp3tag", tagPath).Start()
+		}
+	}
+
+	promptReturn()
+	return true
 }
 
 // ─── HTTP ───────────────────────────────────────────────────────
@@ -1763,12 +1931,34 @@ func processPathsCli(paths []string) {
 func runProcessingCLI(files []string) (processingSummary, error) {
 	summary := processingSummary{Targets: 1, Files: len(files)}
 	var undoSession *genrenorm.UndoSession
+
 	if cfg.write {
-		session, err := genrenorm.StartUndoSession("lastfm")
-		if err != nil {
-			return summary, fmt.Errorf("could not create undo backup session: %w", err)
+		globalSettings, _ := genrenorm.LoadGlobalSettings()
+
+		// Check if backup is enabled
+		if globalSettings.EnableBackup {
+			// Prompt for backup if enabled
+			if globalSettings.PromptForBackup {
+				fmt.Println()
+				fmt.Print(promptStyle.Render("❯ Save backup before writing? [Y/n]:"))
+				fmt.Print(" ")
+				answer := strings.ToLower(readLine())
+				if answer == "" || answer == "y" || answer == "yes" {
+					session, err := genrenorm.StartUndoSession("lastfm")
+					if err != nil {
+						return summary, fmt.Errorf("could not create undo backup session: %w", err)
+					}
+					undoSession = session
+				}
+			} else {
+				// Auto backup without prompting
+				session, err := genrenorm.StartUndoSession("lastfm")
+				if err != nil {
+					return summary, fmt.Errorf("could not create undo backup session: %w", err)
+				}
+				undoSession = session
+			}
 		}
-		undoSession = session
 	}
 
 	dirGroups := make(map[string][]string)
