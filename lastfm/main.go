@@ -438,7 +438,8 @@ func renderSettingsMenu(s settings) {
 	fmt.Println(renderSettingItem("g", "󰲹", "Max Genres", fmt.Sprintf("%d", s.MaxGenres), labelStyle))
 	fmt.Println(renderSettingItem("m", "󱃯", "Default Mode", modeStr, modeStyler))
 	fmt.Println(renderSettingItem("b", "󰡦", "Base Dir", s.BaseDir, pathStyle))
-	fmt.Println()
+	fmt.Println(renderSettingItem("l", "", "Downloads Path", globalSettings.DownloadsPath, pathStyle))
+
 	fmt.Print(renderSection("󰗼", "Backup"))
 	backupStatus := "disabled"
 	if globalSettings.EnableBackup {
@@ -548,6 +549,23 @@ func readBaseDirInput(current string) string {
 		resolved = input
 	}
 	return filepath.Clean(resolved)
+}
+
+func readDownloadsPathInput(current string) string {
+	clearScreen()
+	fmt.Println(renderPageHeader("D O W N L O A D S", "", "P A T H", "Set the default downloads folder for quick access"))
+	fmt.Println()
+	fmt.Println(renderInfoLine("", "Current", current, pathStyle))
+	fmt.Println("  " + sepStyle.Render("────────────────────────────────────────────────────────────"))
+	fmt.Println()
+	fmt.Println("                                    " + renderKeyboardHint("b back • q quit • enter confirm"))
+	fmt.Print(promptStyle.Render("❯ Path:"))
+	fmt.Print(" ")
+	input := readLineRaw()
+	if input == "" || strings.EqualFold(input, "b") || strings.EqualFold(input, "q") {
+		return ""
+	}
+	return strings.TrimSpace(input)
 }
 
 // ─── I/O Helpers ────────────────────────────────────────────────

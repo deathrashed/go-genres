@@ -1163,7 +1163,7 @@ func processTarget(target string) (*processingSummary, error) {
 	if sum.stillMissing > 0 {
 		fmt.Printf("  %-28s %s\n",
 			sLabelStyle.Render("Skipped, no artist tag"),
-			sDimStyle.Render(fmt.Sprintf("%d", sum.stillMissing)),
+			sDimStyle.Render(fmt.Sprintf("%d", sum.StillMissing)),
 		)
 	}
 	if sum.failed > 0 {
